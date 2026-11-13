@@ -1,0 +1,12 @@
+{
+  "name": "stream-route-bench",
+  "version": "1.0.0",
+  "description": "Замер скорости скачивания по десяти последовательным HTTP-запросам",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

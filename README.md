@@ -1,2 +1,13 @@
-# stream-route-bench
-Node.js CLI: 10 parallel downloads via Promise.allSettled, two HLS qualities, five geographic proxy gateways, completion-order tables.
+# Замер скорости скачивания
+
+Консольный скрипт на Node.js: принимает URL, делает 10 последовательных
+запросов и дожидается полного ответа на каждый. Выводит среднее время запроса,
+общий объём полученных данных и скорость скачивания.
+
+Нужен Node.js 22+. Зависимостей нет.
+
+```bash
+node index.js "https://example.org/image.jpg"
+```
+
+Скорость измеряется в МиБ/с: 1 МиБ = 1 048 576 байт.

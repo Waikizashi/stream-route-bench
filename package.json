@@ -1,7 +1,7 @@
 {
   "name": "stream-route-bench",
   "version": "1.0.0",
-  "description": "Замер скорости скачивания по десяти последовательным HTTP-запросам",
+  "description": "Последовательные загрузки файлов и HLS-видео с таблицами скорости",
   "type": "module",
   "scripts": {
     "start": "node index.js"

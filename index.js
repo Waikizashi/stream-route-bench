@@ -1,60 +1,93 @@
-import { performance } from 'node:perf_hooks';
+import { parseArgs } from 'node:util';
+import { download } from './download.js';
+import { DEFAULT_STREAM, prepareStream, REQUEST_COUNT } from './hls.js';
+import { printHeading, printRequests, printSummary } from './report.js';
 
-const REQUEST_COUNT = 10;
-const BYTES_PER_MIB = 1024 * 1024;
+const HELP = `Замер скорости скачивания — Node.js 22+
 
-async function download(url) {
-  const startedAt = performance.now();
-  const response = await fetch(url, {
-    headers: { 'Accept-Encoding': 'identity' },
-  });
+  node index.js <URL>             10 последовательных загрузок файла
+  node index.js --stream          Видео Mux: по 10 сегментов 480p и 1080p
+  node index.js --stream <URL>    Свой HLS-плейлист
+  node index.js --help            Справка
 
-  let bytes = 0;
+URL с расширением .m3u8 автоматически включает режим HLS.
+`;
 
-  for await (const chunk of response.body ?? []) {
-    bytes += chunk.byteLength;
+async function runBatch({ quality, urls, video }) {
+  printHeading(`${quality} · ${urls.length} последовательных загрузок`);
+  const samples = [];
+
+  for (const [index, url] of urls.entries()) {
+    if (process.stdout.isTTY) {
+      process.stdout.write(`\rСкачивание: ${index + 1}/${urls.length}…`);
+    }
+
+    try {
+      const result = await download(url, { video });
+      samples.push(result);
+    } catch (error) {
+      samples.push({
+        bytes: error.bytes,
+        durationMs: error.durationMs,
+        error: error.message,
+      });
+    }
   }
 
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`);
+  if (process.stdout.isTTY) {
+    process.stdout.write('\r\x1b[2K');
   }
 
-  return {
-    bytes,
-    durationMs: performance.now() - startedAt,
-  };
+  const batch = { quality, samples };
+  printRequests(batch);
+  return batch;
 }
 
 async function main() {
-  const [address, ...extraArguments] = process.argv.slice(2);
+  const { values, positionals } = parseArgs({
+    allowPositionals: true,
+    options: {
+      stream: { type: 'boolean' },
+      help: { type: 'boolean', short: 'h' },
+    },
+  });
 
-  if (!address || extraArguments.length > 0) {
-    throw new Error('Использование: node index.js <URL>');
+  if (values.help) {
+    console.log(HELP);
+    return;
   }
 
-  const url = new URL(address);
+  if (positionals.length > 1 || (!positionals.length && !values.stream)) {
+    throw new Error(HELP);
+  }
+
+  const url = new URL(positionals[0] ?? DEFAULT_STREAM);
 
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
     throw new Error('Укажите адрес с протоколом HTTP или HTTPS.');
   }
 
-  let totalBytes = 0;
-  let totalDurationMs = 0;
+  const stream = values.stream || url.pathname.toLowerCase().endsWith('.m3u8');
+  let plan;
 
-  for (let index = 0; index < REQUEST_COUNT; index += 1) {
-    const result = await download(url);
-
-    totalBytes += result.bytes;
-    totalDurationMs += result.durationMs;
+  if (stream) {
+    console.log('Подготавливаю видеопоток…');
+    plan = await prepareStream(url);
+  } else {
+    plan = [{ quality: 'Файл', urls: Array(REQUEST_COUNT).fill(url) }];
   }
 
-  const averageDurationMs = totalDurationMs / REQUEST_COUNT;
-  const totalMib = totalBytes / BYTES_PER_MIB;
-  const speedMibPerSecond = totalMib / (totalDurationMs / 1000);
+  const batches = [];
 
-  console.log(`Среднее время запроса: ${averageDurationMs.toFixed(2)} мс`);
-  console.log(`Общий объём: ${totalBytes} байт (${totalMib.toFixed(2)} МиБ)`);
-  console.log(`Скорость скачивания: ${speedMibPerSecond.toFixed(2)} МиБ/с`);
+  for (const item of plan) {
+    batches.push(await runBatch(item));
+  }
+
+  printSummary(batches);
+
+  if (batches.some((batch) => batch.samples.some((sample) => sample.error))) {
+    process.exitCode = 2;
+  }
 }
 
 main().catch((error) => {
